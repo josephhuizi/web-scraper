@@ -1,0 +1,49 @@
+name: Deploy Priority Prod
+
+on: workflow_dispatch
+
+env:
+  GC_REGION: us-central1
+  AR_LOCATION: ${{ secrets.WEB_SCRAPER_AR_LOCATION }}
+  GC_SERVICE: ${{ secrets.WEB_SCRAPER_GC_SERVICE }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout"
+        uses: "actions/checkout@v3"
+
+      - id: "auth"
+        uses: "google-github-actions/auth@v1"
+        with:
+          credentials_json: "${{ secrets.WEB_SCRAPER_SERVICE_ACCOUNT_KEY }}"
+
+      - name: "Set up Cloud SDK"
+        uses: "google-github-actions/setup-gcloud@v1"
+
+      - name: "Use gcloud CLI"
+        run: "gcloud info"
+
+      - name: "Docker auth"
+        run: |-
+          gcloud auth configure-docker ${{ secrets.WEB_SCRAPER_AR_REGION }}-docker.pkg.dev --quiet
+
+      - name: Make envfile
+        run: |
+          touch .env
+          echo "${{ secrets.WEB_SCRAPER_ENV }}" > .env
+          cat .env
+        
+      - name: "Build image"
+        run: docker build -t ${{ secrets.WEB_SCRAPER_AR_LOCATION }}:$GITHUB_SHA .
+
+      - name: "Push image"
+        run: docker push ${{ secrets.WEB_SCRAPER_AR_LOCATION }}:$GITHUB_SHA
+        
+      - name: "Deploy"
+        run: |-
+          gcloud run deploy ${{ secrets.WEB_SCRAPER_GC_SERVICE }} \
+          --image ${{ secrets.WEB_SCRAPER_AR_LOCATION }}:$GITHUB_SHA \
+          --region $GC_REGION \
+          --quiet
